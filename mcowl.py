@@ -7,7 +7,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from network import MCDNet
+from network import MCDNet, Trainer
+from container import ITRDataset
+from util import plot_train_history
 
 def _return_device(device):
 
@@ -83,7 +85,60 @@ class MCOWL():
 
             print_history = True
             plot_history = True
-            
+
+        trainer = Trainer()
+
+        history = []
+        history += trainer.fit(epochs=epochs, learning_rate=learning_rate, model=self.model, train_loader=loader,
+                                print_history=print_history, opt_func=opt_func, weight_decay=weight_decay, device=self.device)
+        
+        if plot_history:
+
+            plot_train_history(history)
+
+        return history
+
+    def predict(self, X):
+
+        X_tsr = torch.from_numpy(X).float().to(self.device)
+        dec = self.model(X_tsr)
+        D = torch.sign(dec)
+
+        return D.cpu().numpy()
+
+    def evaluate(self, Y, A, D, optA=None, accuracy=True, value=True):
+
+        Y = torch.from_numpy(Y).float()
+        A = torch.from_numpy(A).float()
+        D = torch.from_numpy(D).float()
+
+        n_samples = len(Y)
+
+        prop = np.ones((n_samples, ))
+
+        output = []
+
+        if accuracy:
+
+            if optA is None:
+
+                raise Exception("Optimal assignment is unknown.")
+
+            else:
+
+                optA = torch.from_numpy(optA).float()
+                acc = torch.mean(torch.all(D == optA, dim=1) * 1.0)
+                output.append(acc)
+
+        if value:
+
+            nom = torch.sum(torch.all(D == A, dim=1) * Y / prop) / n_samples
+            den = torch.sum(torch.all(D == A, dim=1) * 1.0 / prop) / n_samples
+
+            val = nom / den
+            output.append(val.numpy())
+
+        return output
 
 
 
