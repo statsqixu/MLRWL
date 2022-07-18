@@ -66,9 +66,9 @@ class MCDNet(nn.Module):
 
         Z = torch.mul(dec, A)
 
-        phi = torch.min(torch.min(Z - 1), 0) + 1
-
-        loss = (Y * phi).mean()
+        phi = torch.min(Z - 1)
+        phi = torch.minimum(phi, 0)
+        loss = - (Y * phi).mean()
 
         return loss
 

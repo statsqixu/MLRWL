@@ -104,7 +104,7 @@ class MCOWL():
         dec = self.model(X_tsr)
         D = torch.sign(dec)
 
-        return D.cpu().numpy()
+        return D.detach().numpy()
 
     def evaluate(self, Y, A, D, optA=None, accuracy=True, value=True):
 
