@@ -1,14 +1,15 @@
-
 from pickletools import optimize
-import torch 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ExponentialLR
+from sklearn.metrics import hamming_loss as hml
+
 
 class MCDNet(nn.Module):
 
-    def __init__(self, input_size, output_size=3, layer=2, act="linear", width=20):
-
+    def __init__(self, input_size, output_size=3, layer=2, act="linear",
+                 width=20):
 
         super(MCDNet, self).__init__()
 
@@ -34,7 +35,7 @@ class MCDNet(nn.Module):
         if self.act == "relu":
 
             cov = F.relu(cov)
-        
+
         elif self.act == "linear":
 
             cov = cov
@@ -72,14 +73,21 @@ class MCDNet(nn.Module):
 
         return loss
 
+    def hamming_loss(self, dec, A, Y):
+
+        phi = hml(dec, A, sample_weight=Y)
+        loss = -(Y * phi).mean()
+
+        return loss
 
     def training_step(self, batch):
 
         Y, X, A = batch
-        
+
         dec_func = self(X)
 
-        loss = self.generalized_hinge_loss(dec_func, A, Y)
+        # loss = self.generalized_hinge_loss(dec_func, A, Y)
+        loss = self.hamming_loss(dec_func, A, Y)
 
         return loss
 
@@ -87,13 +95,16 @@ class MCDNet(nn.Module):
 
         print("Epoch: {} - Training loss: {:.4f}".format(epoch, result))
 
+
 class Trainer():
 
-    def fit(self, epochs, learning_rate, model, train_loader, print_history, opt_func, weight_decay, device):
+    def fit(self, epochs, learning_rate, model, train_loader, print_history,
+            opt_func, weight_decay, device):
 
         history = []
 
-        optimizer = opt_func(model.parameters(), learning_rate, weight_decay = weight_decay)
+        optimizer = opt_func(model.parameters(), learning_rate,
+                             weight_decay=weight_decay)
         optimizer.zero_grad()
         scheduler = ExponentialLR(optimizer, gamma=0.999)
 
