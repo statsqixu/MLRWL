@@ -1,10 +1,11 @@
 from pickletools import optimize
+from numpy.lib.npyio import NpzFile
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ExponentialLR
 from sklearn.metrics import hamming_loss as hml
-
+import numpy as np
 
 class MCDNet(nn.Module):
 
@@ -68,14 +69,25 @@ class MCDNet(nn.Module):
         Z = torch.mul(dec, A)
 
         phi = torch.min(Z - 1)
+
         phi = torch.minimum(phi, torch.tensor(0, dtype=torch.int16))
         loss = - (Y * phi).mean()
 
         return loss
 
+
     def hamming_loss(self, dec, A, Y):
 
-        phi = hml(dec, A, sample_weight=Y)
+        y_true = A.detach().numpy()
+
+        y_pred = dec.detach().numpy()
+
+        y_true = np.argmax(y_true, axis=1)
+
+        y_pred = np.argmax(y_pred, axis=1)
+
+        phi = hml(y_true, y_pred)
+
         loss = -(Y * phi).mean()
 
         return loss
@@ -86,8 +98,8 @@ class MCDNet(nn.Module):
 
         dec_func = self(X)
 
-        loss = self.generalized_hinge_loss(dec_func, A, Y)
-        # loss = self.hamming_loss(dec_func, A, Y)
+        # loss = self.generalized_hinge_loss(dec_func, A, Y)
+        loss = self.hamming_loss(dec_func, A, Y)
 
         return loss
 
@@ -114,6 +126,8 @@ class Trainer():
 
                 batch = [item.to(device) for item in batch]
                 loss = model.training_step(batch)
+                # for hamming loss method, set gradient
+                loss.requires_grad_(True)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
