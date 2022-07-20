@@ -68,7 +68,7 @@ class MCDNet(nn.Module):
         Z = torch.mul(dec, A)
 
         phi = torch.min(Z - 1)
-        phi = torch.minimum(phi, 0)
+        phi = torch.minimum(phi, torch.tensor(0, dtype=torch.int16))
         loss = - (Y * phi).mean()
 
         return loss
@@ -86,8 +86,8 @@ class MCDNet(nn.Module):
 
         dec_func = self(X)
 
-        # loss = self.generalized_hinge_loss(dec_func, A, Y)
-        loss = self.hamming_loss(dec_func, A, Y)
+        loss = self.generalized_hinge_loss(dec_func, A, Y)
+        # loss = self.hamming_loss(dec_func, A, Y)
 
         return loss
 
