@@ -33,11 +33,12 @@ def _return_device(device):
 
 class MCOWL():
 
-    def __init__(self, act="relu", layer=2, width=20):
+    def __init__(self, act="relu", layer=2, width=20, loss="ghl"):
 
         self.act = act
         self.layer = layer
         self.width = width
+        self.loss = loss
 
     def fit(self, Y, X, A, epochs=100, learning_rate=1e-3, verbose=0, opt_func=Adam, weight_decay=0.01, 
                     batch_size=32, device="default"):
@@ -54,7 +55,7 @@ class MCOWL():
         n_samples = X.shape[0]
         output_dim = A.shape[1]
 
-        self.model = MCDNet(input_dim, output_dim, self.layer, self.act, self.width)
+        self.model = MCDNet(input_dim, output_dim, self.layer, self.act, self.width, self.loss)
 
         self.model = self.model.to(self.device)
 

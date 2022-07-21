@@ -10,7 +10,7 @@ import numpy as np
 class MCDNet(nn.Module):
 
     def __init__(self, input_size, output_size=3, layer=2, act="linear",
-                 width=20):
+                 width=20, loss="ghl"):
 
         super(MCDNet, self).__init__()
 
@@ -19,6 +19,7 @@ class MCDNet(nn.Module):
         self.layer = layer
         self.act = act
         self.width = width
+        self.loss = loss
 
         self.input = nn.Linear(input_size, width)
 
@@ -98,8 +99,15 @@ class MCDNet(nn.Module):
 
         dec_func = self(X)
 
-        # loss = self.generalized_hinge_loss(dec_func, A, Y)
-        loss = self.hamming_loss(dec_func, A, Y)
+        # 
+
+        if self.loss == "hgl":
+
+            loss = self.generalized_hinge_loss(dec_func, A, Y)
+
+        elif self.loss == "hml":
+
+            loss = self.hamming_loss(dec_func, A, Y)
 
         return loss
 
@@ -110,7 +118,7 @@ class MCDNet(nn.Module):
 
 class Trainer():
 
-    def fit(self, epochs, learning_rate, model, train_loader, print_history,
+    def fit(self, loss, epochs, learning_rate, model, train_loader, print_history,
             opt_func, weight_decay, device):
 
         history = []
@@ -126,8 +134,6 @@ class Trainer():
 
                 batch = [item.to(device) for item in batch]
                 loss = model.training_step(batch)
-                # for hamming loss method, set gradient
-                loss.requires_grad_(True)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
