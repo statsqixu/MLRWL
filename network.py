@@ -79,15 +79,9 @@ class MCDNet(nn.Module):
 
     def hamming_loss(self, dec, A, Y):
 
-        y_true = A.detach().numpy()
+        Z = torch.tensor(1, dtype=torch.int16) - torch.mul(dec, A)
 
-        y_pred = dec.detach().numpy()
-
-        y_true = np.argmax(y_true, axis=1)
-
-        y_pred = np.argmax(y_pred, axis=1)
-
-        phi = hml(y_true, y_pred)
+        phi = torch.mean(torch.maximum(Z, torch.tensor(0, dtype=torch.int16)))
 
         loss = -(Y * phi).mean()
 
@@ -97,11 +91,9 @@ class MCDNet(nn.Module):
 
         Y, X, A = batch
 
-        dec_func = self(X)
+        dec_func = self(X) 
 
-        # 
-
-        if self.loss == "hgl":
+        if self.loss == "ghl":
 
             loss = self.generalized_hinge_loss(dec_func, A, Y)
 
