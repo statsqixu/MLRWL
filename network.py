@@ -83,7 +83,7 @@ class MCDNet(nn.Module):
 
         phi = torch.mean(torch.maximum(Z, torch.tensor(0, dtype=torch.int16)))
 
-        loss = -(Y * phi).mean()
+        loss = (Y * phi).mean()
 
         return loss
 
@@ -110,7 +110,7 @@ class MCDNet(nn.Module):
 
 class Trainer():
 
-    def fit(self, loss, epochs, learning_rate, model, train_loader, print_history,
+    def fit(self, epochs, learning_rate, model, train_loader, print_history,
             opt_func, weight_decay, device):
 
         history = []

@@ -12,7 +12,7 @@ optA = 2 * optA - 1
 
 Y = Y - np.min(Y) + 0.1
 
-mcowl = MCOWL(layer=5, width=50, act="relu")
+mcowl = MCOWL(layer=5, width=50, act="relu", loss="ghl")
 history = mcowl.fit(Y, X, A, device='cpu', verbose=1, epochs=500, learning_rate=1e-4, batch_size=16)
 
 D = mcowl.predict(X)
