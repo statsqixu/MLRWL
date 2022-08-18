@@ -1,3 +1,5 @@
+from cgi import test
+from pickle import FALSE, TRUE
 from pickletools import optimize
 from numpy.lib.npyio import NpzFile
 import torch
@@ -9,8 +11,8 @@ import numpy as np
 
 class MCDNet(nn.Module):
 
-    def __init__(self, input_size, output_size=3, layer=2, act="linear",
-                 width=20, loss="ghl"):
+    def __init__(self, input_size, output_size=3, layer=2, act="relu",
+                 width=20, loss="ghl",dp=0.4):
 
         super(MCDNet, self).__init__()
 
@@ -20,6 +22,9 @@ class MCDNet(nn.Module):
         self.act = act
         self.width = width
         self.loss = loss
+        self.dp=dp
+        self.dropout=nn.Dropout(dp)
+        self.dropout1=nn.Dropout(0.2)
 
         self.input = nn.Linear(input_size, width)
 
@@ -41,13 +46,15 @@ class MCDNet(nn.Module):
         elif self.act == "linear":
 
             cov = cov
+        
+        if self.dp!=0:
+            cov=self.dropout1(cov)
 
         for index, layer in enumerate(self.hidden):
 
             if index % 2 == 0:
 
                 cov = layer(cov)
-                break
 
             elif index % 2 == 1:
 
@@ -60,6 +67,8 @@ class MCDNet(nn.Module):
                 elif self.act == "linear":
 
                     cov = cov
+                
+                cov=self.dropout(cov)
 
         dec_func = self.output(cov)
 
@@ -69,9 +78,10 @@ class MCDNet(nn.Module):
 
         Z = torch.mul(dec, A)
 
-        phi = torch.min(Z - 1)
+        phi = torch.min(Z - 1,1).values
 
         phi = torch.minimum(phi, torch.tensor(0, dtype=torch.int16))
+        
         loss = - (Y * phi).mean()
 
         return loss
@@ -81,7 +91,7 @@ class MCDNet(nn.Module):
 
         Z = torch.tensor(1, dtype=torch.int16) - torch.mul(dec, A)
 
-        phi = torch.mean(torch.maximum(Z, torch.tensor(0, dtype=torch.int16)))
+        phi = torch.mean(torch.maximum(Z, torch.tensor(0, dtype=torch.int16)),1)
 
         loss = (Y * phi).mean()
 
@@ -103,14 +113,17 @@ class MCDNet(nn.Module):
 
         return loss
 
-    def epoch_end(self, epoch, result):
+    def epoch_end(self, epoch, result,test):
 
-        print("Epoch: {} - Training loss: {:.4f}".format(epoch, result))
+        if test:
+            print("Epoch: {} - Test loss: {:.4f}".format(epoch, result))
+        else:
+            print("Epoch: {} - Training loss: {:.4f}".format(epoch, result))
 
 
 class Trainer():
 
-    def fit(self, epochs, learning_rate, model, train_loader, print_history,
+    def fit(self, epochs, learning_rate, model, train_loader, test_loader, print_history,
             opt_func, weight_decay, device):
 
         history = []
@@ -132,9 +145,12 @@ class Trainer():
                 scheduler.step()
 
             result = self._evaluate(model, train_loader, device)
+            result_t=self._evaluate(model,test_loader,device)
 
             if print_history:
-                model.epoch_end(epoch, result)
+                if epoch%20==0:
+                    model.epoch_end(epoch, result,False)
+                    model.epoch_end(epoch,result_t,True)
 
             history.append(result)
 
