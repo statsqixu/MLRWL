@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from network2 import MCDNet, Trainer
+from network import MCDNet, Trainer
 from container import ITRDataset
 from util import plot_train_history
 
