@@ -11,8 +11,8 @@ import numpy as np
 
 class MCDNet(nn.Module):
 
-    def __init__(self, input_size, output_size=3, layer=2, act="relu",
-                 width=20, loss="ghl",dp=0.4):
+    def __init__(self, input_size, output_size=3, layer=4, act="relu",
+                 width=32, loss="lsl"):
 
         super(MCDNet, self).__init__()
 
@@ -22,9 +22,6 @@ class MCDNet(nn.Module):
         self.act = act
         self.width = width
         self.loss = loss
-        self.dp=dp
-        self.dropout=nn.Dropout(dp)
-        self.dropout1=nn.Dropout(0.2)
 
         self.input = nn.Linear(input_size, width)
 
@@ -34,6 +31,7 @@ class MCDNet(nn.Module):
             self.hidden.append(nn.BatchNorm1d(width))
 
         self.output = nn.Linear(width, output_size)
+        self.tanh = nn.Tanh()
 
     def forward(self, X):
 
@@ -47,8 +45,6 @@ class MCDNet(nn.Module):
 
             cov = cov
         
-        if self.dp!=0:
-            cov=self.dropout1(cov)
 
         for index, layer in enumerate(self.hidden):
 
@@ -67,10 +63,8 @@ class MCDNet(nn.Module):
                 elif self.act == "linear":
 
                     cov = cov
-                
-                cov=self.dropout(cov)
 
-        dec_func = self.output(cov)
+        dec_func = self.tanh(self.output(cov))
 
         return dec_func
 
@@ -78,9 +72,9 @@ class MCDNet(nn.Module):
 
         Z = torch.mul(dec, A)
 
-        phi = torch.min(Z - 1,1).values
+        phi = torch.min(Z - 1, dim=1).values
 
-        phi = torch.minimum(phi, torch.tensor(0, dtype=torch.int16))
+        phi = torch.minimum(phi, torch.tensor(0, dtype=torch.int16)) + torch.tensor(2, dtype=torch.int16)
         
         loss = - (Y * phi).mean()
 
@@ -91,9 +85,21 @@ class MCDNet(nn.Module):
 
         Z = torch.tensor(1, dtype=torch.int16) - torch.mul(dec, A)
 
-        phi = torch.mean(torch.maximum(Z, torch.tensor(0, dtype=torch.int16)),1)
+        phi = torch.mean(torch.maximum(Z, torch.tensor(0, dtype=torch.int16)), dim=1)
 
         loss = (Y * phi).mean()
+
+        return loss
+
+    def landslide_loss(self, dec, A, Y):
+
+        Z = torch.mul(dec, A) - 1
+
+        phi = torch.min(Z, dim=1).values
+
+        phi = torch.maximum(phi, torch.tensor(-1, dtype=torch.int16)) + torch.tensor(1, dtype=torch.int16)
+
+        loss = - (Y  * phi).mean()
 
         return loss
 
@@ -111,12 +117,16 @@ class MCDNet(nn.Module):
 
             loss = self.hamming_loss(dec_func, A, Y)
 
+        elif self.loss == "lsl":
+
+            loss = self.landslide_loss(dec_func, A, Y)
+
         return loss
 
-    def epoch_end(self, epoch, result,test):
+    def epoch_end(self, epoch, result, validate):
 
-        if test:
-            print("Epoch: {} - Test loss: {:.4f}".format(epoch, result))
+        if validate:
+            print("Epoch: {} - Validation loss: {:.4f}".format(epoch, result))
         else:
             print("Epoch: {} - Training loss: {:.4f}".format(epoch, result))
 
@@ -145,12 +155,12 @@ class Trainer():
                 scheduler.step()
 
             result = self._evaluate(model, train_loader, device)
-            result_t=self._evaluate(model,test_loader,device)
+            result_t = self._evaluate(model, test_loader, device)
 
             if print_history:
-                if epoch%20==0:
-                    model.epoch_end(epoch, result,False)
-                    model.epoch_end(epoch,result_t,True)
+                if epoch % 20==0:
+                    model.epoch_end(epoch, result, False)
+                    model.epoch_end(epoch, result_t, True)
 
             history.append(result)
 
