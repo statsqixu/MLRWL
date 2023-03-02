@@ -1,163 +1,77 @@
-from random import sample
-import matplotlib.pyplot as plt
 import numpy as np
 
-# some utility functions
-## plot training history  
-def plot_train_history(history):
+def _categorical_treatment(A):
     
-    plt.plot(history, "-x")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-
-
-def _low_dim_cov(sample_size):
-
-    return np.random.uniform(low=-1, high=1, size=(sample_size, 5)) # low-dim
-
-def _high_dim_cov(sample_size):
-
-    return np.random.uniform(low=-1, high=1, size=(sample_size, 50)) # high-dim
-
-def _2_channel_trt(sample_size):
-
-    return np.random.choice([0, 1], size=(sample_size, 2))
-
-def _3_channel_trt(sample_size):
-
-    return np.random.choice([0, 1], size=(sample_size, 3))
-
-def _2_channel_trt_embed(A):
-
-    assert A.shape[1] == 2
-
-    sample_size = A.shape[0]
-    beta = np.zeros((sample_size, 3))
-
-    beta[np.all(A == np.array([0, 0]), axis=1), :] = np.array([1, -1, 2])
-    beta[np.all(A == np.array([0, 1]), axis=1), :] = np.array([-2, 2, 1])
-    beta[np.all(A == np.array([1, 0]), axis=1), :] = np.array([0, 1, 1])
-    beta[np.all(A == np.array([1, 1]), axis=1), :] = np.array([1, -2, -4])
-
-    return beta
-
-def _3_channel_trt_embed(A):
-
-    assert A.shape[1] == 3
-
-    sample_size = A.shape[0]
-    beta = np.zeros((sample_size, 4))
-
-    beta[np.all(A == np.array([0, 0, 0]), axis=1), :] = np.array([1, 0, -1, 2])
-    beta[np.all(A == np.array([0, 0, 1]), axis=1), :] = np.array([0, -1, 1, -1])
-    beta[np.all(A == np.array([0, 1, 0]), axis=1), :] = np.array([-2, 1, -2, 1])
-    beta[np.all(A == np.array([0, 1, 1]), axis=1), :] = np.array([1, 1, -2, -1])
-    beta[np.all(A == np.array([1, 0, 0]), axis=1), :] = np.array([0, 2, -1, 1])
-    beta[np.all(A == np.array([1, 0, 1]), axis=1), :] = np.array([-1, -3, 3, -1])
-    beta[np.all(A == np.array([1, 1, 0]), axis=1), :] = np.array([0, 2, 1, -2])
-    beta[np.all(A == np.array([1, 1, 1]), axis=1), :] = np.array([1, -2, 1, 1])
-
-    return beta
-
-
-def _2_channel_cov_embed(X):
-
-    sample_size = X.shape[0]
-    alpha = np.zeros((sample_size, 3))
-    alpha[:, 0] = (X[:, 0] ** 2 + X[:, 1] ** 3 - 1)
-    alpha[:, 1] = np.sin(np.pi * (X[:, 2] * X[:, 4]))
-    alpha[:, 2] = X[:, 4] ** 2 * (X[:, 1] >= 0)
-
-    return alpha
-
-def _3_channel_cov_embed(X):
-
-    sample_size = X.shape[0]
-    alpha = np.zeros((sample_size, 4))
-    alpha[:, 0] = (X[:, 0] ** 2 + X[:, 1] ** 3 - 1)
-    alpha[:, 1] = np.sin(np.pi * (X[:, 2] * X[:, 4]))
-    alpha[:, 2] = X[:, 4] ** 2 * (X[:, 1] >= 0)
-    alpha[:, 3] = np.exp(X[:, 1] * X[:, 2] - X[:, 3] ** 2) 
-
-    return alpha
-
-
-
-def getdata(sample_size, case=1, seed=None):
-
     """
-    Simulation data generation
-
-    parameters
-    ----------
-    sample_size: int
-        number of subjects to be generated
-    
-    case: {1, 2, ..., 8}
-        simulation case number
-        case 1: low-dim covariates, linear, 2-channels
-        case 2: low-dim covariates, linear, 3-channels
-        case 3: low-dim covariates, nonlinear, 2-channels
-        case 4: low-dim covariates, nonlinear, 3-channels
-        case 5: high-dim covariates, linear, 2-channels
-        case 6: high-dim covariates, linear, 3-channels
-        case 7: high-dim covariates, nonlinear, 2-channels
-        case 8: high-dim covariates, nonlinear, 3-channels
-
-    seed: int, default=None
-        random generating seed
+    Create categorical representation of multi-channel treatment
     """
-    
+
+    _, A_cate = np.unique(A, return_inverse=True, axis=0)
+
+    return A_cate
+
+# generate data based on linear decision boundary
+
+def getdata(sample_size, case=1, outcome_shift=None, 
+            seed = None):
+
     if seed is not None:
+
         np.random.seed(seed)
-    
-    # treatment latent embedding
-    
-    if case in [1, 2, 3, 4]:
 
-        X = _low_dim_cov(sample_size)
+    X = np.random.uniform(-1, 1, (sample_size, 10))
 
-    else: 
+    m = 1 + X[:, 0] + 2 * X[:, 1]
 
-        X = _high_dim_cov(sample_size)
+    if case == 1:
+        
+        A = np.random.choice([-1, 1], (sample_size, 2))
+        A_cate = _categorical_treatment(A)
 
-    if case in [1, 3, 5, 7]:
+        trt_panel = np.zeros((sample_size, 4))
+        trt_panel[:, 0] = 0 * (X[:, 0] + X[:, 1] < 0) * (-X[:, 0] + X[:, 1] < 0)
+        trt_panel[:, 1] = 6 * (X[:, 0] + X[:, 1] > 0) * (-X[:, 0] + X[:, 1] < 0) 
+        trt_panel[:, 2] = 5 * (X[:, 0] + X[:, 1] < 0) * (-X[:, 0] + X[:, 1] > 0)
+        trt_panel[:, 3] = 3 * (X[:, 0] + X[:, 1] > 0) * (-X[:, 0] + X[:, 1] > 0)
 
-        A = _2_channel_trt(sample_size)
-        beta = _2_channel_trt_embed(A)
+    elif case == 2:
 
-    else:
+        A = np.random.choice([-1, 1], (sample_size, 2))
+        A_cate = _categorical_treatment(A)
 
-        A = _3_channel_trt(sample_size)
-        beta = _3_channel_trt_embed(A)
+        trt_panel = np.zeros((sample_size, 4))
+        trt_panel[:, 0] = X[:, 0] + 2 * X[:, 3] - 2 * X[:, 4]
+        trt_panel[:, 1] = - X[:, 1] + 2 * X[:, 2] - 2 * X[:, 4]
+        trt_panel[:, 2] = X[:, 2] - 3 * X[:, 3] + 1/2 * X[:, 4]
+        trt_panel[:, 3] = - X[:, 0] - 2 * X[:, 3] + 2 * X[:, 6]
+        
+    elif case == 3:
 
-    if case in [1, 5]:
+        A = np.random.choice([-1, 1], (sample_size, 3))
+        A_cate = _categorical_treatment(A)
 
-        alpha = X[:, 0: 3]
+        trt_panel = np.zeros((sample_size, 8))
+        trt_panel[:, 0] = 1/2 * (X[:, 0] ** 2 - X[:, 1] * X[:, 2])
+        trt_panel[:, 1] = 2 * (X[:, 0] + np.exp(X[:, 1]))
+        trt_panel[:, 2] = X[:, 2] + (X[:, 3] + X[:, 4]) ** 2
+        trt_panel[:, 3] = np.log((X[:, 4] + 1) ** 2)
+        trt_panel[:, 4] = np.exp(X[:, 5] + X[:, 6])
+        trt_panel[:, 5] = X[:, 7] + X[:, 8] + X[:, 9]
+        trt_panel[:, 6] = X[:, 0] + (X[:, 1] - X[:, 2]) ** 3
+        trt_panel[:, 7] = (X[:, 0] - X[:, 4] + X[:, 5]) ** 2
 
-    elif case in [2, 6]:
+    Y = m + trt_panel[np.arange(sample_size), A_cate] + np.random.normal(0, 0.3, sample_size)
 
-        alpha = X[:, 0: 4]
+    if outcome_shift is not None:
 
-    elif case in [3, 7]:
+        Y = Y - np.min(Y) + outcome_shift
 
-        alpha = _2_channel_cov_embed(X)
-
-    else:
-
-        alpha = _3_channel_cov_embed(X)
-
-
-    Y = 1 + X[:, 0] + X[:, 1] + np.sum(np.multiply(alpha, beta), axis=1)
-
-    Y = Y + np.random.normal(size=(sample_size, ))
-
-    A_unique, A_idx = np.unique(A, return_index=True, axis=0)
-    beta_unique = beta[A_idx, :]
-    trt_panel = alpha.dot(beta_unique.transpose())
-
+    A_uni = np.unique(A, axis=0)
     _optA = np.argmax(trt_panel, axis=1)    
-    optA = A_unique[_optA, :]
-    
-    return Y, X, A, optA
+    optA = A_uni[_optA, :]
 
+    return X, A, Y, optA
+
+
+
+        
