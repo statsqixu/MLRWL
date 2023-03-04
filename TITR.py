@@ -21,6 +21,8 @@ class TITR():
 
         n, p = X.shape
 
+        X = np.c_[np.ones(n), X]
+
         k = A.shape[1]
 
         if self.kernel == "linear":
@@ -31,8 +33,8 @@ class TITR():
 
             # initialize sub_grad
 
-            sub_grad = np.zeros((p, k))
-            beta_cur = np.zeros((p, k))
+            sub_grad_cur = np.zeros((p + 1, k))
+            beta_cur = np.zeros((p + 1, k))
 
 
         elif self.kernel == "rbf":
@@ -43,7 +45,7 @@ class TITR():
 
             # initialize sub_grad
 
-            sub_grad = np.zeros((n, k))
+            sub_grad_cur = np.zeros((n, k))
             beta_cur = np.zeros((n, k))
 
 
@@ -55,7 +57,7 @@ class TITR():
 
             # initialize sub_grad
 
-            sub_grad = np.zeros((n, k))
+            sub_grad_cur = np.zeros((n, k))
             beta_cur = np.zeros((n, k))
 
         # estimate treatment-free effects
@@ -70,14 +72,9 @@ class TITR():
         for _ in range(max_iter):
 
             beta_prev = beta_cur
+            sub_grad_prev = sub_grad_cur
 
-            beta_cur = self.qp_solver(A, W, sub_grad)
-
-            err = np.linalg.norm(beta_cur - beta_prev, ord="fro")
-
-            if err < 1e-4:
-
-                break
+            beta_cur = self.qp_solver(A, W, sub_grad_cur)
             
             if self.kernel == "linear":
     
@@ -95,13 +92,25 @@ class TITR():
             indicator2 = np.argmax(np.c_[predictor2, np.zeros(n)], axis=1)
             indicator2[W < 0] = k + 1
 
-            sub_grad = self.sub_gradient(A, W, indicator1, indicator2)
+            sub_grad_cur = self.sub_gradient(A, W, indicator1, indicator2)
+
+            err = np.linalg.norm(sub_grad_cur - sub_grad_prev, ord="fro")
+
+            # print("iter: {}, error: {}".format(_, err))
+
+            if err < 1e-4:
+
+                break
 
         self.beta = beta_cur
 
         return beta_cur
 
     def predict(self, X_test):
+
+        n, p = X_test.shape
+
+        X_test = np.c_[np.ones(n), X_test]
 
         if self.kernel == "linear":
 

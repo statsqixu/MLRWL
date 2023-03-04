@@ -40,10 +40,10 @@ def getdata(sample_size, case=1, outcome_shift=None,
         A_cate = _categorical_treatment(A)
 
         trt_panel = np.zeros((sample_size, 4))
-        trt_panel[:, 0] = X[:, 0] + 2 * X[:, 3] - 2 * X[:, 4]
-        trt_panel[:, 1] = - X[:, 1] + 2 * X[:, 2] - 2 * X[:, 4]
-        trt_panel[:, 2] = X[:, 2] - 3 * X[:, 3] + 1/2 * X[:, 4]
-        trt_panel[:, 3] = - X[:, 0] - 2 * X[:, 3] + 2 * X[:, 6]
+        trt_panel[:, 0] = X[:, 1] + 2 * X[:, 2] - X[:, 3]
+        trt_panel[:, 1] = X[:, 0] + X[:, 1] + 2 * X[:, 2] - X[:, 3]
+        trt_panel[:, 2] = X[:, 0] + 2 * X[:, 1] + 2 * X[:, 2] + 3 * X[:, 3]
+        trt_panel[:, 3] = 2 * X[:, 0] - 2 * X[:, 1] + 4 * X[:, 2] - 8 * X[:, 3] + 6 * X[:, 4]
         
     elif case == 3:
 
@@ -51,14 +51,14 @@ def getdata(sample_size, case=1, outcome_shift=None,
         A_cate = _categorical_treatment(A)
 
         trt_panel = np.zeros((sample_size, 8))
-        trt_panel[:, 0] = 1/2 * (X[:, 0] ** 2 - X[:, 1] * X[:, 2])
+        trt_panel[:, 0] = 0
         trt_panel[:, 1] = 2 * (X[:, 0] + np.exp(X[:, 1]))
         trt_panel[:, 2] = X[:, 2] + (X[:, 3] + X[:, 4]) ** 2
-        trt_panel[:, 3] = np.log((X[:, 4] + 1) ** 2)
+        trt_panel[:, 3] = 2 * (X[:, 0] + np.exp(X[:, 1])) + X[:, 2] + (X[:, 3] + X[:, 4]) ** 2 + np.log((X[:, 4] + 1) ** 2)
         trt_panel[:, 4] = np.exp(X[:, 5] + X[:, 6])
-        trt_panel[:, 5] = X[:, 7] + X[:, 8] + X[:, 9]
-        trt_panel[:, 6] = X[:, 0] + (X[:, 1] - X[:, 2]) ** 3
-        trt_panel[:, 7] = (X[:, 0] - X[:, 4] + X[:, 5]) ** 2
+        trt_panel[:, 5] = np.exp(X[:, 5] + X[:, 6]) + 2 * (X[:, 0] + np.exp(X[:, 1])) + X[:, 7] + X[:, 8] + X[:, 9]
+        trt_panel[:, 6] = np.exp(X[:, 5] + X[:, 6]) + X[:, 2] + (X[:, 3] + X[:, 4]) ** 2
+        trt_panel[:, 7] = np.exp(X[:, 5] + X[:, 6]) + X[:, 2] + (X[:, 3] + X[:, 4]) ** 2 + 2 * (X[:, 0] + np.exp(X[:, 1])) + (X[:, 0] - X[:, 4] + X[:, 5]) ** 2
 
     Y = m + trt_panel[np.arange(sample_size), A_cate] + np.random.normal(0, 0.3, sample_size)
 
