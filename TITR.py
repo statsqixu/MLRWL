@@ -7,6 +7,7 @@ from tqdm import tqdm
 from sklearn.metrics.pairwise import rbf_kernel, polynomial_kernel
 from sklearn.linear_model import LinearRegression
 from util import getdata
+import cvxpy as cp
 
 class TITR():
 
@@ -21,9 +22,9 @@ class TITR():
 
         n, p = X.shape
 
-        X = np.c_[np.ones(n), X]
-
         k = A.shape[1]
+
+        np.random.seed(seed=None)
 
         if self.kernel == "linear":
     
@@ -33,9 +34,10 @@ class TITR():
 
             # initialize sub_grad
 
-            sub_grad_cur = np.zeros((p + 1, k))
-            beta_cur = np.zeros((p + 1, k))
-
+            sub_grad_cur = np.zeros((p, k))
+            sub_grad0_cur = np.zeros((1, k))
+            beta_cur = np.zeros((p, k))
+            beta0_cur = np.zeros((1, k))
 
         elif self.kernel == "rbf":
     
@@ -46,8 +48,9 @@ class TITR():
             # initialize sub_grad
 
             sub_grad_cur = np.zeros((n, k))
+            sub_grad0_cur = np.zeros((1, k))
             beta_cur = np.zeros((n, k))
-
+            beta0_cur = np.zeros((1, k))
 
         elif self.kernel == "poly":
 
@@ -58,7 +61,9 @@ class TITR():
             # initialize sub_grad
 
             sub_grad_cur = np.zeros((n, k))
+            sub_grad0_cur = np.zeros((1, k))
             beta_cur = np.zeros((n, k))
+            beta0_cur = np.zeros((1, k))
 
         # estimate treatment-free effects
 
@@ -72,61 +77,53 @@ class TITR():
         for _ in range(max_iter):
 
             beta_prev = beta_cur
+            beta0_prev = beta0_cur
             sub_grad_prev = sub_grad_cur
+            sub_grad0_prev = sub_grad0_cur
 
-            beta_cur = self.qp_solver(A, W, sub_grad_cur)
-            
-            if self.kernel == "linear":
-    
-                predictor1 = 1 - (X.dot(beta_cur)) * A
-                predictor2 = - (X.dot(beta_cur)) * A
+            lambd = self.qp_solver(A, W, sub_grad_cur, sub_grad0_cur)
 
-            else:
+            beta_cur = self.compute_beta(lambd, A, sub_grad_cur)
 
-                predictor1 = 1 - (self.K.dot(beta_cur)) * A
-                predictor2 = - (self.K.dot(beta_cur)) * A
+            beta0_cur = self.compute_beta0(lambd, A, W, beta_cur)
 
-            indicator1 = np.argmax(np.c_[predictor1, np.zeros(n)], axis=1)
-            indicator1[W > 0] = k + 1
+            sub_grad_cur = self.compute_sub_grad(A, W, beta_cur, beta0_cur)
 
-            indicator2 = np.argmax(np.c_[predictor2, np.zeros(n)], axis=1)
-            indicator2[W < 0] = k + 1
+            sub_grad0_cur = self.compute_sub_grad0(A, W, beta_cur, beta0_cur)
 
-            sub_grad_cur = self.sub_gradient(A, W, indicator1, indicator2)
-
-            err = np.linalg.norm(sub_grad_cur - sub_grad_prev, ord="fro")
+            err = max(np.linalg.norm(beta_cur - beta_prev, ord="fro") + np.linalg.norm(beta0_cur - beta0_prev, ord="fro"), 
+                        np.linalg.norm(sub_grad_cur - sub_grad_prev, ord="fro") + np.linalg.norm(sub_grad0_cur - sub_grad0_prev, ord="fro"))
 
             # print("iter: {}, error: {}".format(_, err))
 
-            if err < 1e-4:
+            if err < 1e-6:
 
                 break
 
         self.beta = beta_cur
+        self.beta0 = beta0_cur
 
-        return beta_cur
+        return beta_cur, beta0_cur
 
     def predict(self, X_test):
 
         n, p = X_test.shape
 
-        X_test = np.c_[np.ones(n), X_test]
-
         if self.kernel == "linear":
 
-            D = np.sign(X_test.dot(self.beta))
+            D = np.sign(X_test.dot(self.beta) + self.beta0)
 
         elif self.kernel == "rbf":
 
             K_test = rbf_kernel(X_test, self.X_train, gamma=1/(self.sigma ** 2))
 
-            D = np.sign(K_test.dot(self.beta))
+            D = np.sign(K_test.dot(self.beta) + self.beta0)
 
         elif self.kernel == "poly":
 
             K_test = polynomial_kernel(X_test, self.X_train, degree=self.degree)
 
-            D = np.sign(K_test.dot(self.beta))
+            D = np.sign(K_test.dot(self.beta) + self.beta0)
 
         return D
 
@@ -146,10 +143,9 @@ class TITR():
 
         return output
 
-    def qp_solver(self, A, W, sub_grad):
+    def qp_solver(self, A, W, sub_grad, sub_grad0):
 
         n = self.K.shape[0]
-        p = self.X_train.shape[1]
 
         k = A.shape[1]
 
@@ -157,53 +153,91 @@ class TITR():
 
             Q = block_diag(*[(self.X_train * A[:, kk][:, np.newaxis]).dot((self.X_train * A[:, kk][:, np.newaxis]).transpose()) for kk in range(k)])
 
-            P = - np.concatenate([(self.X_train * A[:, kk][:, np.newaxis]).dot(sub_grad[:, kk][:, np.newaxis]) for kk in range(k)], axis=0)
+            P = - np.concatenate([(self.X_train * A[:, kk][:, np.newaxis]).dot(sub_grad[:, kk][:, np.newaxis]) for kk in range(k)], axis=0).T
 
         else:
 
             Q = block_diag(*[np.diag(A[:, kk]).dot(self.K).dot(np.diag(A[:, kk])) for kk in range(k)])
 
-            P = - np.concatenate([np.diag(A[:, kk]).dot(sub_grad[:, kk]) for kk in range(k)], axis=0)
+            P = - np.concatenate([np.diag(A[:, kk]).dot(sub_grad[:, kk]) for kk in range(k)], axis=0).T
 
+        O = np.tile(1 * (W > 0), k).T
+        
         C1 = np.concatenate([np.eye(n) for _ in range(k)], axis=1)
-
-        D1 = np.tile(1 * (W > 0), k)
+        C2 = block_diag(*[A[:, kk] for kk in range(k)])
 
         m = gp.Model("qp")
 
         lambd = m.addMVar((n * k), lb = 0.0, vtype = GRB.CONTINUOUS, name = "lambd")
         m.setParam("OutputFlag", 0)
-        m.setObjective(1/2 * lambd.T @ Q @ lambd + P.T @ lambd - D1.T @ lambd, GRB.MINIMIZE)
+        m.setObjective(1/2 * lambd.T @ (Q) @ lambd + P @ lambd - O @ lambd, GRB.MINIMIZE)
         m.addConstr(C1 @ lambd <= np.abs(W))
+        m.addConstr(C2 @ lambd == sub_grad0)
 
         m.optimize()
 
         lambd = lambd.X
+        
+        return lambd
+    
+    def compute_beta(self, lambd, A, sub_grad):
+
+        n = self.K.shape[0]
+        p = self.X_train.shape[1]
+        k = A.shape[1]
 
         if self.kernel == "linear":
 
             beta = np.zeros((p, k))
 
+            for kk in range(k):
+
+                beta[:, kk] = np.sum(np.diag(A[:, kk] * lambd[kk * n: (kk + 1) * n]).dot(self.X_train), axis=0) - sub_grad[:, kk]
+
         else:
 
             beta = np.zeros((n, k))
 
+            for kk in range(k):
+
+                beta[:, kk] = A[:, kk] * lambd[kk * n: (kk + 1) * n] - np.linalg.inv(self.K).dot(sub_grad[:, kk])
+
+        return beta
+    
+    def compute_beta0(self, lambd, A, W, beta):
+
+        n = self.K.shape[0]
+        p = self.X_train.shape[1]
+        k = A.shape[1]
+
+        lambd_sum = np.sum(lambd.reshape((k, n)), axis=0)
+
+        index = np.where(lambd_sum < W)[0]
+
+        beta0 = np.zeros((1, k))
+
         for kk in range(k):
+
+            lambd_sub = lambd[kk * n: (kk + 1) * n]
+            index_sub = np.where(lambd_sub > 0)[0]
+
+            # take the intersection of index and index_sub
+
+            index_int = np.intersect1d(index, index_sub)
 
             if self.kernel == "linear":
 
-                beta[:, kk] = - sub_grad[:, kk] + (self.X_train * A[:, kk][:, np.newaxis]).T.dot(lambd[kk * n: (kk + 1) * n])
+                beta0[0, kk] = np.mean(A[index_int, kk] * (W[index_int] > 0) - self.X_train[index_int, :].dot(beta[:, kk]))
 
-            else: 
-                
-                beta[:, kk] = np.linalg.inv(self.K).dot(-sub_grad[:, kk] + np.diag(A[:, kk]).dot(self.K).dot(lambd[kk * n: (kk + 1) * n]))
+            else:
 
-        return beta
+                beta0[0, kk] = np.mean(A[index_int, kk] * (W[index_int] > 0) - self.K[index_int, :].dot(beta[:, kk]))
 
-    def sub_gradient(self, A, W, indicator1, indicator2):
+        return beta0
+
+    def compute_sub_grad(self, A, W, beta_cur, beta0_cur):
 
         n = self.K.shape[0]
-
         k = A.shape[1]
 
         if self.kernel == "linear":
@@ -219,24 +253,96 @@ class TITR():
 
             for kk in range(k):
 
-                    if self.kernel == "linear":
+                if self.kernel == "linear":
 
-                        if indicator1[i] == kk:
+                    predictor1 = np.array([1 - A[:, kk] * (self.X_train.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor1 = np.c_[predictor1, np.zeros((n, ))]
+                    indicator1 = np.argmax(predictor1, axis=1)
+
+                    predictor2 = np.array([- A[:, kk] * (self.X_train.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor2 = np.c_[predictor2, np.zeros((n, ))]
+                    indicator2 = np.argmax(predictor2, axis=1)
+
+                    if indicator1[i] == kk:
+
+                        sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.X_train[i, :] * (W[i] < 0)
+
+                    elif indicator2[i] == kk:
+
+                        sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.X_train[i, :] * (W[i] <= 0)
+
+                else: 
+                    
+                    predictor1 = np.array([1 - A[:, kk] * (self.K.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor1 = np.c_[predictor1, np.zeros((n, ))]
+                    indicator1 = np.argmax(predictor1, axis=1)
+
+                    predictor2 = np.array([- A[:, kk] * (self.K.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor2 = np.c_[predictor2, np.zeros((n, ))]
+                    indicator2 = np.argmax(predictor2, axis=1)
+
+                    if indicator1[i] == kk:
     
-                            sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.X_train[i, :]
+                        sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.K[:, i] * (W[i] < 0)
+                    
+                    elif indicator2[i] == kk:
 
-                        elif indicator2[i] == kk:
-
-                            sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.X_train[i, :]
-
-                    else: 
-                        
-                        if indicator1[i] == kk:
-        
-                            sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.K[:, i]
-                        
-                        elif indicator2[i] == kk:
-
-                            sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.K[:, i]
+                        sub_grad[:, kk] += np.abs(W[i]) * A[i, kk] * self.K[:, i] * (W[i] >= 0)
 
         return sub_grad
+    
+    def compute_sub_grad0(self, A, W, beta_cur, beta0_cur):
+
+        n = self.K.shape[0]
+        k = A.shape[1]
+
+        if self.kernel == "linear":
+            
+            p = self.X_train.shape[1]
+            sub_grad0 = np.zeros((1, k))
+
+        else:
+            sub_grad0 = np.zeros((1, k))
+
+
+        for i in range(n):
+
+            for kk in range(k):
+
+                if self.kernel == "linear":
+
+                    predictor1 = np.array([1 - A[:, kk] * (self.X_train.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor1 = np.c_[predictor1, np.zeros((n, ))]
+                    indicator1 = np.argmax(predictor1, axis=1)
+
+                    predictor2 = np.array([- A[:, kk] * (self.X_train.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor2 = np.c_[predictor2, np.zeros((n, ))]
+                    indicator2 = np.argmax(predictor2, axis=1)
+
+                    if indicator1[i] == kk:
+
+                        sub_grad0[0, kk] += np.abs(W[i]) * A[i, kk] * (W[i] < 0)
+
+                    elif indicator2[i] == kk:
+
+                        sub_grad0[0, kk] += np.abs(W[i]) * A[i, kk] * (W[i] >= 0)
+
+                else: 
+                    
+                    predictor1 = np.array([1 - A[:, kk] * (self.K.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor1 = np.c_[predictor1, np.zeros((n, ))]
+                    indicator1 = np.argmax(predictor1, axis=1)
+
+                    predictor2 = np.array([- A[:, kk] * (self.K.dot(beta_cur[:, kk]) + beta0_cur[0, kk]) for kk in range(k)]).T
+                    predictor2 = np.c_[predictor2, np.zeros((n, ))]
+                    indicator2 = np.argmax(predictor2, axis=1)
+
+                    if indicator1[i] == kk:
+    
+                        sub_grad0[0, kk] += np.abs(W[i]) * A[i, kk] * (W[i] < 0)
+                    
+                    elif indicator2[i] == kk:
+
+                        sub_grad0[0, kk] += np.abs(W[i]) * A[i, kk] * (W[i] >= 0)
+
+        return sub_grad0
