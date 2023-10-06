@@ -170,9 +170,9 @@ class TITR():
 
         lambd = m.addMVar((n * k), lb = 0.0, vtype = GRB.CONTINUOUS, name = "lambd")
         m.setParam("OutputFlag", 0)
-        m.setObjective(1/2 * lambd.T @ (Q) @ lambd + P @ lambd - O @ lambd, GRB.MINIMIZE)
+        m.setObjective(1/2 * lambd.T @ (Q) @ lambd + self.gamma * P @ lambd - O @ lambd, GRB.MINIMIZE)
         m.addConstr(C1 @ lambd <= np.abs(W))
-        m.addConstr(C2 @ lambd == sub_grad0)
+        m.addConstr(C2 @ lambd == self.gamma * sub_grad0)
 
         m.optimize()
 
