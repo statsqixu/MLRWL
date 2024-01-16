@@ -5,8 +5,8 @@ import gurobipy as gp
 from gurobipy import GRB
 from tqdm import tqdm
 from sklearn.metrics.pairwise import rbf_kernel, polynomial_kernel
-from sklearn.linear_model import LinearRegression
-from util import getdata
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from util import *
 import cvxpy as cp
 
 class TITR():
@@ -18,7 +18,7 @@ class TITR():
         self.sigma = sigma
         self.degree = degree
 
-    def fit(self, X, A, Y, max_iter=100):
+    def fit(self, X, A, Y, max_iter=100, verbose=0):
 
         n, p = X.shape
 
@@ -70,9 +70,13 @@ class TITR():
         lm = LinearRegression(fit_intercept=True)
         tf = lm.fit(X, Y).predict(X)
 
+        mlm = LogisticRegression(multi_class="multinomial")
+        ps = mlm.fit(X, categorize_treatment(A, A.shape[1])).predict_proba(X)
+        ps = ps[np.arange(A.shape[0]), categorize_treatment(A, A.shape[1])]
+
         R = Y - tf
 
-        W = self.gamma * R
+        W = self.gamma * R / ps
 
         for _ in range(max_iter):
 
@@ -94,7 +98,9 @@ class TITR():
             err = max(np.linalg.norm(beta_cur - beta_prev, ord="fro") + np.linalg.norm(beta0_cur - beta0_prev, ord="fro"), 
                         np.linalg.norm(sub_grad_cur - sub_grad_prev, ord="fro") + np.linalg.norm(sub_grad0_cur - sub_grad0_prev, ord="fro"))
 
-            # print("iter: {}, error: {}".format(_, err))
+            if verbose == 1:
+
+                print("iter: {}, error: {}".format(_, err))
 
             if err < 1e-6:
 
@@ -127,7 +133,7 @@ class TITR():
 
         return D
 
-    def evaluate(self, Y_test, A_test, D_test, optA_test=None):
+    def evaluate(self, Y_test, A_test, D_test, optA_test=None, randomized=True, X_test=None):
 
         output = []
 
